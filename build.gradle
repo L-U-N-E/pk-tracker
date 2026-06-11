@@ -1,0 +1,50 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        url = uri('https://repo.runelite.net')
+        content {
+            includeGroupByRegex 'net\\.runelite.*'
+        }
+    }
+}
+
+def runeLiteVersion = 'latest.release'
+
+dependencies {
+    compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
+
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation group: 'net.runelite', name: 'client', version: runeLiteVersion
+}
+
+group = 'com.pktracker'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// Launch a development RuneLite client with this plugin loaded:
+//   gradle runClient
+tasks.register('runClient', JavaExec) {
+    group = 'runelite'
+    description = 'Launches a dev RuneLite client with the PK Tracker plugin loaded'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.pktracker.PkTrackerPluginTest'
+    enableAssertions = true
+}
+test {
+    failOnNoDiscoveredTests = false
+}
