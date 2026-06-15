@@ -45,6 +45,10 @@ tasks.register('runClient', JavaExec) {
     mainClass = 'com.pktracker.PkTrackerPluginTest'
     enableAssertions = true
 }
+
+// The test source set holds a dev-client launcher (run via the `runClient`
+// task), not real JUnit tests. Disable the test task so it doesn't fail on
+// build systems that error when no tests are discovered. Valid on all Gradle versions.
 test {
-    failOnNoDiscoveredTests = false
+    enabled = false
 }
