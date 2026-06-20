@@ -1018,7 +1018,13 @@ public class PkTrackerPlugin extends Plugin
 				.onClick(e ->
 				{
 					lookupPlayer(cleanName);
-					SwingUtilities.invokeLater(() -> clientToolbar.openPanel(navButton));
+					// Only pop the panel open if the opponent overlay isn't on —
+					// when the overlay is enabled it already shows the result,
+					// so opening the panel would be redundant and intrusive.
+					if (!config.opponentOverlay())
+					{
+						SwingUtilities.invokeLater(() -> clientToolbar.openPanel(navButton));
+					}
 				});
 		}
 	}
