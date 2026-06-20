@@ -19,6 +19,8 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
+import javax.swing.JTextArea;
+import javax.swing.JScrollPane;
 import javax.swing.JToggleButton;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -38,6 +40,7 @@ public class PkTrackerPanel extends PluginPanel
 
 	private final PkTrackerPlugin plugin;
 	private final SpriteManager spriteManager;
+	private javax.swing.ImageIcon opponentSkullIcon; // Slayer skull shown before the name
 	private final net.runelite.client.game.ItemManager itemManager;
 
 	// One shared font for every stat number so all sections match
@@ -56,6 +59,14 @@ public class PkTrackerPanel extends PluginPanel
 	private final JPanel skillGrid = new JPanel(new GridLayout(0, 3, 4, 6));
 	private final JPanel minigameRow = new JPanel(new GridLayout(1, 3, 4, 0));
 
+
+	// Player note: header, editable text area, save button. Tracks who the note is for.
+	private final JLabel noteHeader = new JLabel("Note");
+	private final JTextArea noteArea = new JTextArea(2, 1);
+	private final JButton noteSaveButton = new JButton("Save note");
+	private String noteForName = null;
+	private JPanel notePanelRef;
+
 	// Kill list
 	private final JPanel killListPanel = new JPanel();
 	private final JToggleButton sessionToggle = new JToggleButton("Session", true);
@@ -63,33 +74,59 @@ public class PkTrackerPanel extends PluginPanel
 
 	public PkTrackerPanel(PkTrackerPlugin plugin, SpriteManager spriteManager, net.runelite.client.game.ItemManager itemManager)
 	{
+		// false = don't wrap this panel in PluginPanel's own scroll pane; we manage our own
+		super(false);
 		this.plugin = plugin;
 		this.spriteManager = spriteManager;
+		loadOpponentSkullIcon();
 		this.itemManager = itemManager;
 
-		setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
-		setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		addSection(buildHeader());
-		addSection(buildStatsPanel());
-		addSection(buildOpponentPanel());
-		addSection(buildButtonsPanel());
-		addSection(buildKillListSection());
+		// Fixed top: header, stats, opponent, buttons, list toggles — never scrolls
+		JPanel top = new JPanel();
+		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
+		top.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		top.setBorder(BorderFactory.createEmptyBorder(10, 10, 6, 10));
+		addSection(top, buildHeader());
+		addSection(top, buildStatsPanel());
+		addSection(top, buildOpponentPanel());
+		addSection(top, buildButtonsPanel());
+		addSection(top, buildListToggles());
+		add(top, BorderLayout.NORTH);
+
+		// Scrollable bottom: the kill/loot list only
+		killListPanel.setLayout(new BoxLayout(killListPanel, BoxLayout.Y_AXIS));
+		killListPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		killListPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
+
+		// Keeps rows packed at the top rather than stretched to fill the viewport
+		JPanel listWrapper = new JPanel(new BorderLayout());
+		listWrapper.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		listWrapper.add(killListPanel, BorderLayout.NORTH);
+
+		JScrollPane listScroll = new JScrollPane(listWrapper,
+			JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+			JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+		listScroll.setBorder(BorderFactory.createEmptyBorder());
+		listScroll.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		listScroll.getVerticalScrollBar().setUnitIncrement(16);
+		add(listScroll, BorderLayout.CENTER);
 	}
 
 	/**
 	 * All top-level sections share the same alignment so they render at
 	 * the same width instead of drifting (a BoxLayout quirk).
 	 */
-	private void addSection(JPanel section)
+	private void addSection(JPanel parent, JPanel section)
 	{
 		section.setAlignmentX(Component.LEFT_ALIGNMENT);
-		if (getComponentCount() > 0)
+		if (parent.getComponentCount() > 0)
 		{
-			add(Box.createVerticalStrut(8));
+			parent.add(Box.createVerticalStrut(8));
 		}
-		add(section);
+		parent.add(section);
 	}
 
 	// ------------------------------------------------------------------
@@ -179,7 +216,10 @@ public class PkTrackerPanel extends PluginPanel
 
 		JPanel lookupBar = buildLookupBar();
 
-		for (Component c : new Component[]{section, opponentTitle, opponentStatus, skillGrid, minigameRow, lookupBar})
+		JPanel notePanel = buildNotePanel();
+
+		for (Component c : new Component[]{section, opponentTitle, opponentStatus, skillGrid,
+			minigameRow, notePanel, lookupBar})
 		{
 			((javax.swing.JComponent) c).setAlignmentX(Component.LEFT_ALIGNMENT);
 		}
@@ -193,9 +233,92 @@ public class PkTrackerPanel extends PluginPanel
 		opponentPanel.add(Box.createVerticalStrut(6));
 		opponentPanel.add(minigameRow);
 		opponentPanel.add(Box.createVerticalStrut(8));
+		opponentPanel.add(notePanel);
+		opponentPanel.add(Box.createVerticalStrut(8));
 		opponentPanel.add(lookupBar);
-		opponentPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 320));
 		return opponentPanel;
+	}
+
+	private JPanel buildNotePanel()
+	{
+		JPanel panel = new JPanel();
+		panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		noteHeader.setFont(FontManager.getRunescapeSmallFont());
+		noteHeader.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		noteHeader.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		noteArea.setLineWrap(true);
+		noteArea.setWrapStyleWord(true);
+		noteArea.setFont(FontManager.getRunescapeSmallFont());
+		noteArea.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		noteArea.setForeground(Color.WHITE);
+		noteArea.setCaretColor(Color.WHITE);
+		noteArea.setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
+
+		JScrollPane scroll = new JScrollPane(noteArea);
+		scroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 56));
+		scroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+		scroll.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
+
+		noteSaveButton.setFocusPainted(false);
+		noteSaveButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+		noteSaveButton.addActionListener(e -> saveCurrentNote());
+
+		// Enter saves the note; Shift+Enter inserts a newline for multi-line notes
+		noteArea.getInputMap().put(
+			javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0), "saveNote");
+		noteArea.getInputMap().put(
+			javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER,
+				java.awt.event.InputEvent.SHIFT_DOWN_MASK), "insertNewline");
+		noteArea.getActionMap().put("saveNote", new javax.swing.AbstractAction()
+		{
+			@Override
+			public void actionPerformed(java.awt.event.ActionEvent e)
+			{
+				saveCurrentNote();
+			}
+		});
+		noteArea.getActionMap().put("insertNewline", new javax.swing.AbstractAction()
+		{
+			@Override
+			public void actionPerformed(java.awt.event.ActionEvent e)
+			{
+				noteArea.insert("\n", noteArea.getCaretPosition());
+			}
+		});
+
+		panel.add(noteHeader);
+		panel.add(Box.createVerticalStrut(4));
+		panel.add(scroll);
+		panel.add(Box.createVerticalStrut(4));
+		panel.add(noteSaveButton);
+
+		// Always visible; shows a prompt until there's an opponent/lookup
+		noteHeader.setText("Note (look up a player first)");
+		noteSaveButton.setEnabled(false);
+		this.notePanelRef = panel;
+		return panel;
+	}
+
+	private void saveCurrentNote()
+	{
+		if (noteForName != null)
+		{
+			plugin.savePlayerNote(noteForName, noteArea.getText());
+			boolean hasNote = noteArea.getText() != null && !noteArea.getText().trim().isEmpty();
+			if (hasNote)
+			{
+				noteHeader.setText("\u26A0 Note on " + noteForName);
+				noteHeader.setForeground(new Color(255, 170, 0));
+			}
+			else
+			{
+				noteHeader.setText("Note on " + noteForName);
+				noteHeader.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+			}
+		}
 	}
 
 	private JPanel buildLookupBar()
@@ -215,6 +338,7 @@ public class PkTrackerPanel extends PluginPanel
 			if (!name.isEmpty())
 			{
 				plugin.lookupPlayer(name);
+				setOpponentNote(name, plugin.getPlayerNote(name));
 				nameField.setText("");
 			}
 		};
@@ -229,8 +353,20 @@ public class PkTrackerPanel extends PluginPanel
 
 	private JPanel buildButtonsPanel()
 	{
+		JPanel container = new JPanel();
+		container.setLayout(new BoxLayout(container, BoxLayout.Y_AXIS));
+		container.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		// Full-width button to open the screenshot folder
+		JButton openShots = new JButton("Open screenshots");
+		openShots.setFocusPainted(false);
+		openShots.setAlignmentX(Component.LEFT_ALIGNMENT);
+		openShots.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+		openShots.addActionListener(e -> openScreenshotFolder());
+
 		JPanel buttons = new JPanel(new GridLayout(1, 2, 6, 0));
 		buttons.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		buttons.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		JButton reset = new JButton("Reset session");
 		reset.setFocusPainted(false);
@@ -252,15 +388,40 @@ public class PkTrackerPanel extends PluginPanel
 		buttons.add(reset);
 		buttons.add(clear);
 		buttons.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-		return buttons;
+
+		container.add(openShots);
+		container.add(Box.createVerticalStrut(6));
+		container.add(buttons);
+		return container;
 	}
 
-	private JPanel buildKillListSection()
+	/**
+	 * Opens the PK Tracker screenshot folder in the OS file browser,
+	 * creating it if it doesn't exist yet. The path (including the player
+	 * name subfolder) comes from the plugin so it matches where the
+	 * screenshots actually save.
+	 */
+	private void openScreenshotFolder()
 	{
-		JPanel section = new JPanel();
-		section.setLayout(new BoxLayout(section, BoxLayout.Y_AXIS));
-		section.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		try
+		{
+			java.io.File dir = plugin.getScreenshotFolder();
+			if (!dir.exists())
+			{
+				dir.mkdirs();
+			}
+			java.awt.Desktop.getDesktop().open(dir);
+		}
+		catch (Exception ex)
+		{
+			JOptionPane.showMessageDialog(this,
+				"Could not open the screenshot folder.",
+				"PK Tracker", JOptionPane.WARNING_MESSAGE);
+		}
+	}
 
+	private JPanel buildListToggles()
+	{
 		JPanel toggles = new JPanel(new GridLayout(1, 2));
 		toggles.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		toggles.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -281,15 +442,7 @@ public class PkTrackerPanel extends PluginPanel
 		toggles.add(sessionToggle);
 		toggles.add(historyToggle);
 		toggles.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
-
-		killListPanel.setLayout(new BoxLayout(killListPanel, BoxLayout.Y_AXIS));
-		killListPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		killListPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-		section.add(toggles);
-		section.add(Box.createVerticalStrut(6));
-		section.add(killListPanel);
-		return section;
+		return toggles;
 	}
 
 	// ------------------------------------------------------------------
@@ -449,31 +602,90 @@ public class PkTrackerPanel extends PluginPanel
 	// Opponent stat display (hiscore-style grid)
 	// ------------------------------------------------------------------
 
+	/**
+	 * Shows the note box for the given player, prefilled with any saved note.
+	 * Highlights the header when a note already exists (e.g. a known rat).
+	 */
+	public void setOpponentNote(String name, String existingNote)
+	{
+		noteForName = name;
+		noteArea.setText(existingNote != null ? existingNote : "");
+		noteSaveButton.setEnabled(true);
+
+		boolean hasNote = existingNote != null && !existingNote.trim().isEmpty();
+		if (hasNote)
+		{
+			noteHeader.setText("\u26A0 Note on " + name);
+			noteHeader.setForeground(new Color(255, 170, 0)); // amber warning
+		}
+		else
+		{
+			noteHeader.setText("Note on " + name);
+			noteHeader.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		}
+
+		revalidate();
+		repaint();
+	}
+
 	public void setOpponentLoading(String name)
 	{
-		opponentTitle.setText(name);
+		setOpponentTitle(name);
 		opponentStatus.setText("Looking up stats…");
 		opponentStatus.setVisible(true);
 		skillGrid.setVisible(false);
 		minigameRow.setVisible(false);
+		setOpponentNote(name, plugin.getPlayerNote(name));
 		revalidate();
 		repaint();
 	}
 
 	public void setOpponentError(String name)
 	{
-		opponentTitle.setText(name);
+		setOpponentTitle(name);
 		opponentStatus.setText("Lookup failed (unranked?)");
 		opponentStatus.setVisible(true);
 		skillGrid.setVisible(false);
 		minigameRow.setVisible(false);
+		setOpponentNote(name, plugin.getPlayerNote(name));
 		revalidate();
 		repaint();
 	}
 
+	private void loadOpponentSkullIcon()
+	{
+		// Use the same in-game Slayer skull sprite as the menu/sidebar icons
+		spriteManager.getSpriteAsync(net.runelite.api.SpriteID.SKILL_SLAYER, 0, sprite ->
+		{
+			if (sprite == null)
+			{
+				return;
+			}
+			java.awt.image.BufferedImage scaled = ImageUtil.resizeImage(sprite, 16, 16);
+			javax.swing.SwingUtilities.invokeLater(() ->
+			{
+				opponentSkullIcon = new javax.swing.ImageIcon(scaled);
+				if (opponentTitle.getText() != null && !opponentTitle.getText().isEmpty())
+				{
+					opponentTitle.setIcon(opponentSkullIcon);
+				}
+			});
+		});
+	}
+
+	/**
+	 * Sets the opponent title text and shows the skull icon before it.
+	 */
+	private void setOpponentTitle(String text)
+	{
+		opponentTitle.setText(text);
+		opponentTitle.setIcon(opponentSkullIcon); // null-safe; no icon until loaded
+		opponentTitle.setIconTextGap(4);
+	}
+
 	public void setOpponent(OpponentStats stats)
 	{
-		opponentTitle.setText(stats.name + "   ⚔ " + stats.combatLevel);
+		setOpponentTitle(stats.name + "   ⚔ " + stats.combatLevel);
 		opponentStatus.setVisible(false);
 
 		skillGrid.removeAll();
@@ -492,9 +704,13 @@ public class PkTrackerPanel extends PluginPanel
 		minigameRow.add(minigameCell("LMS", HiscoreSkill.LAST_MAN_STANDING, stats.lms));
 		minigameRow.setVisible(true);
 
+		// Refresh the note section for THIS opponent (was showing the prior one)
+		setOpponentNote(stats.name, plugin.getPlayerNote(stats.name));
+
 		revalidate();
 		repaint();
 	}
+
 
 	private JPanel skillCell(String skillName, int level)
 	{
