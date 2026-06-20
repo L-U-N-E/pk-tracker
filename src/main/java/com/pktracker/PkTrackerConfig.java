@@ -74,4 +74,70 @@ public interface PkTrackerConfig extends Config
 	{
 		return 120;
 	}
+	@ConfigItem(
+		keyName = "rightClickLookup",
+		name = "Right-click PK Lookup",
+		description = "Adds a 'PK Lookup' option when you right-click a player",
+		position = 6
+	)
+	default boolean rightClickLookup()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "damageOverlay",
+		name = "Damage overlay",
+		description = "Show an on-screen overlay of damage dealt to and taken from your opponent during a fight",
+		position = 7
+	)
+	default boolean damageOverlay()
+	{
+		return false;
+	}
+
+	@Range(min = 5, max = 120)
+	@ConfigItem(
+		keyName = "damageResetDelay",
+		name = "Fight reset delay (s)",
+		description = "Seconds of no combat before the damage overlay resets (also clears instantly on entering a safe zone or starting a new fight)",
+		position = 8
+	)
+	default int damageResetDelay()
+	{
+		return 30;
+	}
+
+	@ConfigItem(
+		keyName = "sessionOverlay",
+		name = "Session stats overlay",
+		description = "Show an on-screen overlay with your session kills, deaths, K/D, streak and loot",
+		position = 9
+	)
+	default boolean sessionOverlay()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "opponentOverlay",
+		name = "Opponent overlay",
+		description = "Show an on-screen overlay with the current opponent's stats, BH/LMS ranks, saved note and damage during a fight",
+		position = 10
+	)
+	default boolean opponentOverlay()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "killScreenshot",
+		name = "Screenshot on kill/death",
+		description = "Automatically screenshot the moment you kill an opponent or die, capturing the final hitsplats (game view only, saved to the PK Tracker folder)",
+		position = 11
+	)
+	default boolean killScreenshot()
+	{
+		return false;
+	}
 }
