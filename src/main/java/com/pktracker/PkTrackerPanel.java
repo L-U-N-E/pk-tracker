@@ -89,6 +89,7 @@ public class PkTrackerPanel extends PluginPanel
 		top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
 		top.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		top.setBorder(BorderFactory.createEmptyBorder(10, 10, 6, 10));
+		addSection(top, buildScreenshotNote());
 		addSection(top, buildHeader());
 		addSection(top, buildStatsPanel());
 		addSection(top, buildOpponentPanel());
@@ -132,6 +133,31 @@ public class PkTrackerPanel extends PluginPanel
 	// ------------------------------------------------------------------
 	// Layout builders
 	// ------------------------------------------------------------------
+
+	private JPanel buildScreenshotNote()
+	{
+		JPanel note = new JPanel();
+		note.setLayout(new BoxLayout(note, BoxLayout.Y_AXIS));
+		note.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		note.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(new Color(255, 170, 0), 1),
+			BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+
+		JLabel text = new JLabel("<html><div style='width:160px;'>"
+			+ "<span style='color:#FFAA00;'>&#9888; For best performance:</span> "
+			+ "if PK Tracker screenshots are on, "
+			+ "<b style='color:#FFAA00;'>TURN OFF</b> the built-in RuneLite "
+			+ "Screenshot plugin's <b style='color:#FFAA00;'>SCREENSHOT PVP KILLS</b> "
+			+ "and <b style='color:#FFAA00;'>SCREENSHOT DEATHS</b> options to avoid "
+			+ "capturing two screenshots at once."
+			+ "</div></html>");
+		text.setForeground(Color.LIGHT_GRAY);
+		text.setFont(FontManager.getRunescapeSmallFont());
+		text.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		note.add(text);
+		return note;
+	}
 
 	private JPanel buildHeader()
 	{
