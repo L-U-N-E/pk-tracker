@@ -3,11 +3,19 @@ package com.pktracker;
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
+import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Range;
 
 @ConfigGroup(PkTrackerPlugin.CONFIG_GROUP)
 public interface PkTrackerConfig extends Config
 {
+	@ConfigSection(
+		name = "Screenshots",
+		description = "Kill/death screenshots. For best performance, open the built-in RuneLite 'Screenshot' plugin and turn OFF its 'Screenshot PvP kills' and 'Screenshot deaths' options, so you aren't capturing two screenshots at once.",
+		position = 100,
+		closedByDefault = false
+	)
+	String screenshotSection = "screenshotSection";
 	@ConfigItem(
 		keyName = "lookupOnFightStart",
 		name = "Lookup stats on fight start",
@@ -133,8 +141,9 @@ public interface PkTrackerConfig extends Config
 	@ConfigItem(
 		keyName = "killScreenshot",
 		name = "Screenshot on kill/death",
-		description = "Automatically screenshot the moment you kill an opponent or die, capturing the final hitsplats (game view only, saved to the PK Tracker folder)",
-		position = 11
+		description = "Automatically screenshot the moment you kill an opponent or die, capturing the final hitsplats (game view only, saved to the PK Tracker folder). For best performance, disable the built-in RuneLite Screenshot plugin's 'Screenshot PvP kills' and 'Screenshot deaths' options so you aren't taking two screenshots at once.",
+		position = 11,
+		section = screenshotSection
 	)
 	default boolean killScreenshot()
 	{
