@@ -153,9 +153,14 @@ public class PkOpponentOverlay extends Overlay
 
 		int y = PAD + ROW_H - 6;
 
-		// Title (name)
+		// Title: name + combat level (crossed-swords symbol, like the panel)
 		g.setColor(TEXT);
-		g.drawString(name != null ? name : "Opponent", PAD, y);
+		String title = name != null ? name : "Opponent";
+		if (stats != null && stats.combatLevel > 0)
+		{
+			title = title + "  \u2694 " + stats.combatLevel;
+		}
+		g.drawString(title, PAD, y);
 		y += ROW_H;
 
 		// Note (amber, read-only)
