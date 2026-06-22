@@ -40,7 +40,7 @@ import net.runelite.client.plugins.loottracker.LootReceived;
 import net.runelite.http.api.loottracker.LootRecordType;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStack;
-import net.runelite.client.hiscore.HiscoreClient;
+import net.runelite.client.hiscore.HiscoreManager;
 import net.runelite.client.hiscore.HiscoreEndpoint;
 import net.runelite.client.hiscore.HiscoreResult;
 import net.runelite.client.hiscore.HiscoreSkill;
@@ -89,7 +89,10 @@ public class PkTrackerPlugin extends Plugin
 	private Gson gson;
 
 	@Inject
-	private HiscoreClient hiscoreClient;
+	private HiscoreManager hiscoreManager;
+
+	@Inject
+	private java.util.concurrent.ScheduledExecutorService executor;
 
 	@Inject
 	private ChatMessageManager chatMessageManager;
@@ -602,10 +605,21 @@ public class PkTrackerPlugin extends Plugin
 			return;
 		}
 
-		Instant last = recentLookups.get(name);
-		if (last != null && Instant.now().isBefore(last.plusSeconds(config.lookupCooldown())))
+		// Respect the lookup cooldown only if we ALREADY have this opponent's
+		// stats showing. If stats are missing (e.g. cleared during a long run to
+		// a far BH target), bypass the cooldown so they re-fetch immediately on
+		// engage — no name-only gap.
+		boolean haveStatsForThem = lastOpponentStats != null
+			&& lastOpponentStats.name != null
+			&& lastOpponentStats.name.equalsIgnoreCase(name);
+
+		if (haveStatsForThem)
 		{
-			return;
+			Instant last = recentLookups.get(name);
+			if (last != null && Instant.now().isBefore(last.plusSeconds(config.lookupCooldown())))
+			{
+				return;
+			}
 		}
 		recentLookups.put(name, Instant.now());
 
@@ -706,11 +720,12 @@ public class PkTrackerPlugin extends Plugin
 		}
 
 		// BH target assigned but not yet engaged: keep the overlay up while
-		// running to them, but if no fight starts within ~10s (e.g. you skip an
-		// inactive target), clear it instead of letting it linger.
+		// running to them. Only clear if no fight starts within ~60s — long
+		// enough to reach a far target across the map, but still clears a
+		// genuinely skipped/inactive target eventually.
 		if (bhTargetName != null && overlayOpponent == null)
 		{
-			if (bhTargetTick >= 0 && client.getTickCount() - bhTargetTick > 16) // ~10s
+			if (bhTargetTick >= 0 && client.getTickCount() - bhTargetTick > 100) // ~60s
 			{
 				clearDamageFight();
 			}
@@ -1033,50 +1048,61 @@ public class PkTrackerPlugin extends Plugin
 	{
 		SwingUtilities.invokeLater(() -> panel.setOpponentLoading(name));
 
-		hiscoreClient.lookupAsync(name, HiscoreEndpoint.NORMAL)
-			.whenCompleteAsync((result, ex) ->
+		executor.execute(() ->
+		{
+			HiscoreResult result;
+			try
 			{
-				try
-				{
-					if (ex != null || result == null)
-					{
-						log.warn("Hiscore lookup failed for '{}'", name, ex);
-						SwingUtilities.invokeLater(() -> panel.setOpponentError(name));
-						return;
-					}
+				result = hiscoreManager.lookup(name, HiscoreEndpoint.NORMAL);
+			}
+			catch (java.io.IOException ex)
+			{
+				log.warn("Hiscore lookup failed for '{}'", name, ex);
+				SwingUtilities.invokeLater(() -> panel.setOpponentError(name));
+				return;
+			}
 
-					OpponentStats stats = buildStats(name, result);
-					lastOpponentStats = stats;
-					SwingUtilities.invokeLater(() -> panel.setOpponent(stats));
-
-					if (config.statsChatMessage())
-					{
-						String message = new ChatMessageBuilder()
-							.append(ChatColorType.HIGHLIGHT)
-							.append(name)
-							.append(ChatColorType.NORMAL)
-							.append(" (cb " + stats.combatLevel + "): ")
-							.append("Atk " + stats.attack
-								+ " / Str " + stats.strength
-								+ " / Def " + stats.defence
-								+ " / HP " + stats.hitpoints
-								+ " / Rng " + stats.ranged
-								+ " / Mag " + stats.magic
-								+ " / Pray " + stats.prayer)
-							.build();
-						chatMessageManager.queue(QueuedMessage.builder()
-							.type(ChatMessageType.CONSOLE)
-							.runeLiteFormattedMessage(message)
-							.build());
-					}
-				}
-				catch (Exception e)
+			try
+			{
+				if (result == null)
 				{
-					// Never let an exception leave the panel stuck on "Looking up…"
-					log.warn("Error processing hiscore result for '{}'", name, e);
+					log.warn("Hiscore lookup returned no result for '{}'", name);
 					SwingUtilities.invokeLater(() -> panel.setOpponentError(name));
+					return;
 				}
-			});
+
+				OpponentStats stats = buildStats(name, result);
+				lastOpponentStats = stats;
+				SwingUtilities.invokeLater(() -> panel.setOpponent(stats));
+
+				if (config.statsChatMessage())
+				{
+					String message = new ChatMessageBuilder()
+						.append(ChatColorType.HIGHLIGHT)
+						.append(name)
+						.append(ChatColorType.NORMAL)
+						.append(" (cb " + stats.combatLevel + "): ")
+						.append("Atk " + stats.attack
+							+ " / Str " + stats.strength
+							+ " / Def " + stats.defence
+							+ " / HP " + stats.hitpoints
+							+ " / Rng " + stats.ranged
+							+ " / Mag " + stats.magic
+							+ " / Pray " + stats.prayer)
+						.build();
+					chatMessageManager.queue(QueuedMessage.builder()
+						.type(ChatMessageType.CONSOLE)
+						.runeLiteFormattedMessage(message)
+						.build());
+				}
+			}
+			catch (Exception e)
+			{
+				// Never let an exception leave the panel stuck on "Looking up…"
+				log.warn("Error processing hiscore result for '{}'", name, e);
+				SwingUtilities.invokeLater(() -> panel.setOpponentError(name));
+			}
+		});
 	}
 
 	private static OpponentStats buildStats(String name, HiscoreResult result)
