@@ -483,11 +483,25 @@ public class PkTrackerPlugin extends Plugin
 	{
 		final Actor dead = event.getActor();
 
-		// Opponent died — capture the kill screenshot (final hitsplats still visible)
-		if (config.killScreenshot() && overlayOpponent != null && dead == overlayOpponent)
+		// Opponent died — credit the kill and capture the screenshot.
+		// ActorDeath fires reliably in every mode (wilderness, PvP worlds, BH),
+		// unlike the kill chat message which varies or only broadcasts in some
+		// situations (e.g. clan). We only credit a player opponent we were
+		// actually fighting (overlayOpponent), so PvM deaths don't count.
+		if (overlayOpponent != null && dead == overlayOpponent && dead instanceof Player)
 		{
-			String name = dead instanceof Player ? Text.sanitize(((Player) dead).getName()) : "opponent";
-			captureScreenshot("Kill " + name);
+			final String victimName = Text.sanitize(((Player) dead).getName());
+
+			if (config.killScreenshot())
+			{
+				captureScreenshot("Kill " + victimName);
+			}
+
+			if (!victimName.isEmpty())
+			{
+				log.debug("Kill credited from opponent death: {}", victimName);
+				creditKill(victimName, dead.getCombatLevel());
+			}
 		}
 
 		if (dead != client.getLocalPlayer())
@@ -705,15 +719,24 @@ public class PkTrackerPlugin extends Plugin
 			lastKnownPlayerName = local.getName();
 		}
 
-		// Keep the fight "active" while still engaged with the opponent, even
-		// during hitless stretches (eating, praying, running a pillar). Without
-		// this, a long lull in damage would wrongly reset the counters.
+		// Keep the fight "active" while the opponent is still present, even
+		// during hitless stretches (eating, praying, running a pillar, brief
+		// line-of-sight breaks). We refresh on EITHER still interacting OR the
+		// opponent still being rendered nearby — a long fight has many ticks
+		// where getInteracting() is momentarily null but the fight is ongoing.
 		if (overlayOpponent != null && local != null)
 		{
-			boolean stillEngaged =
+			boolean stillInteracting =
 				local.getInteracting() == overlayOpponent
 				|| overlayOpponent.getInteracting() == local;
-			if (stillEngaged)
+
+			// Opponent still loaded/rendered in the scene = fight not over
+			boolean opponentStillPresent =
+				overlayOpponent instanceof Player
+				&& !((Player) overlayOpponent).isDead()
+				&& ((Player) overlayOpponent).getName() != null;
+
+			if (stillInteracting || opponentStillPresent)
 			{
 				lastCombatTick = client.getTickCount();
 			}
@@ -872,9 +895,13 @@ public class PkTrackerPlugin extends Plugin
 	private static final java.util.regex.Pattern TARGET_LOST_PATTERN =
 		java.util.regex.Pattern.compile("(?i)target is no longer available|target has been removed|lost your target|no longer have a target");
 
-	// Fired on PvP kills in the wilderness, BH and PvP worlds
+	// Fired on PvP kills in the wilderness and PvP worlds: "You have defeated X"
 	private static final java.util.regex.Pattern KILL_PATTERN =
 		java.util.regex.Pattern.compile("(?i)you have defeated (.+?)[.!]?$");
+
+	// Bounty Hunter kill message: "Target killed: <name>! Kills: <n>"
+	private static final java.util.regex.Pattern BH_KILL_PATTERN =
+		java.util.regex.Pattern.compile("(?i)target killed:\\s*(.+?)!?\\s*kills:\\s*\\d+");
 
 	@Subscribe
 	public void onChatMessage(net.runelite.api.events.ChatMessage event)
@@ -887,6 +914,7 @@ public class PkTrackerPlugin extends Plugin
 		String message = Text.removeTags(event.getMessage());
 
 		// --- Kill detection (always on) ---
+		// Wilderness / PvP worlds: "You have defeated X"
 		java.util.regex.Matcher killMatcher = KILL_PATTERN.matcher(message);
 		if (killMatcher.find())
 		{
@@ -894,6 +922,19 @@ public class PkTrackerPlugin extends Plugin
 			if (!victimName.isEmpty())
 			{
 				log.debug("Kill credited from chat: {}", victimName);
+				creditKill(victimName, -1);
+			}
+			return;
+		}
+
+		// Bounty Hunter: "Target killed: <name>! Kills: <n>"
+		java.util.regex.Matcher bhKillMatcher = BH_KILL_PATTERN.matcher(message);
+		if (bhKillMatcher.find())
+		{
+			String victimName = Text.sanitize(bhKillMatcher.group(1)).trim();
+			if (!victimName.isEmpty())
+			{
+				log.debug("BH kill credited from chat: {}", victimName);
 				creditKill(victimName, -1);
 			}
 			return;
