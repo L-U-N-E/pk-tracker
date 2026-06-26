@@ -322,6 +322,12 @@ public class PkTrackerPlugin extends Plugin
 	@Subscribe
 	public void onPlayerLootReceived(PlayerLootReceived event)
 	{
+		// Only track loot in real PK content (Wilderness or PvP world).
+		if (!inPvpArea())
+		{
+			return;
+		}
+
 		final Player victim = event.getPlayer();
 		final String name = Text.sanitize(victim.getName());
 
@@ -355,6 +361,12 @@ public class PkTrackerPlugin extends Plugin
 	@Subscribe
 	public void onLootReceived(LootReceived event)
 	{
+		// Only track loot in real PK content (Wilderness or PvP world).
+		if (!inPvpArea())
+		{
+			return;
+		}
+
 		if (event.getType() != LootRecordType.EVENT)
 		{
 			return;
@@ -497,7 +509,12 @@ public class PkTrackerPlugin extends Plugin
 				captureScreenshot("Kill " + victimName);
 			}
 
-			if (!victimName.isEmpty())
+			// Skip the kill credit in minigames (LMS, Soul Wars, etc.) when the
+			// user only wants Wilderness/PvP kills counted. Screenshot still fires.
+			// Only credit the kill in real PK content (Wilderness or PvP world).
+			// In minigames like LMS/Soul Wars the screenshot still fires above,
+			// but the kill doesn't count toward your PK stats.
+			if (!victimName.isEmpty() && inPvpArea())
 			{
 				log.debug("Kill credited from opponent death: {}", victimName);
 				creditKill(victimName, dead.getCombatLevel());
@@ -523,6 +540,15 @@ public class PkTrackerPlugin extends Plugin
 			return;
 		}
 
+		// Skip the death in minigames (LMS, Soul Wars, etc.) when the user only
+		// wants Wilderness/PvP stats counted.
+		// Only count deaths in real PK content (Wilderness or PvP world).
+		// Minigame deaths (LMS, Soul Wars, etc.) don't count toward stats.
+		if (!inPvpArea())
+		{
+			return;
+		}
+
 		sessionDeaths++;
 		killStreak = 0;
 
@@ -534,9 +560,17 @@ public class PkTrackerPlugin extends Plugin
 	 * Captures the next rendered game frame and saves it to the PK Tracker
 	 * screenshot subfolder. Grabs the next frame so the killing hitsplats,
 	 * which are usually still on screen this tick, are included.
+	 *
+	 * Only fires in real PK content (Wilderness or PvP world) — kill/death
+	 * screenshots in minigames like LMS/Soul Wars aren't captured.
 	 */
 	private void captureScreenshot(String fileName)
 	{
+		if (!inPvpArea())
+		{
+			return;
+		}
+
 		drawManager.requestNextFrameListener(image ->
 		{
 			try
@@ -758,12 +792,26 @@ public class PkTrackerPlugin extends Plugin
 			}
 		}
 
+		// Are we still actively in a fight right now? (interacting with the
+		// opponent, or they're interacting with us). Used to tell a genuine
+		// safe zone (standing in a bank) apart from a minigame like LMS where
+		// real combat is happening but we're not in the Wilderness/PvP world.
+		boolean currentlyFighting = false;
+		if (overlayOpponent != null && local != null)
+		{
+			currentlyFighting =
+				local.getInteracting() == overlayOpponent
+				|| overlayOpponent.getInteracting() == local;
+		}
+
 		final boolean activeFight = overlayOpponent != null || bhTargetName != null
 			|| lastOpponentStats != null;
 
-		// On entering a safe zone, start a short grace period instead of
-		// clearing instantly, so the overlay lingers ~5s then fades.
-		if (activeFight && !inPvpArea())
+		// On entering a TRUE safe zone (not in PvP area AND not actively
+		// fighting), start a short grace period instead of clearing instantly,
+		// so the overlay lingers ~5s then fades. A minigame fight (LMS) is not a
+		// safe zone, so the damage overlay keeps working there.
+		if (activeFight && !inPvpArea() && !currentlyFighting)
 		{
 			if (safeZoneTick < 0)
 			{
@@ -833,6 +881,13 @@ public class PkTrackerPlugin extends Plugin
 
 	public boolean hasActiveFight()
 	{
+		// The opponent overlay (stats/notes/BH) is PK-specific — only show it in
+		// real PK content. In minigames like LMS the damage overlay still works
+		// (it uses isEngaged()), but this PK overlay stays hidden.
+		if (!inPvpArea())
+		{
+			return false;
+		}
 		return overlayOpponent != null || bhTargetName != null || lastOpponentStats != null;
 	}
 
@@ -919,7 +974,7 @@ public class PkTrackerPlugin extends Plugin
 		if (killMatcher.find())
 		{
 			String victimName = Text.sanitize(killMatcher.group(1)).trim();
-			if (!victimName.isEmpty())
+			if (!victimName.isEmpty() && inPvpArea())
 			{
 				log.debug("Kill credited from chat: {}", victimName);
 				creditKill(victimName, -1);
@@ -932,7 +987,7 @@ public class PkTrackerPlugin extends Plugin
 		if (bhKillMatcher.find())
 		{
 			String victimName = Text.sanitize(bhKillMatcher.group(1)).trim();
-			if (!victimName.isEmpty())
+			if (!victimName.isEmpty() && inPvpArea())
 			{
 				log.debug("BH kill credited from chat: {}", victimName);
 				creditKill(victimName, -1);
@@ -1087,6 +1142,14 @@ public class PkTrackerPlugin extends Plugin
 
 	private void lookupOpponent(final String name)
 	{
+		// Stat lookup only makes sense in real PK content. In minigames like LMS
+		// everyone has the same maxed stats, so lookups are disabled there —
+		// this covers auto lookups, manual panel lookups, and right-click.
+		if (!inPvpArea())
+		{
+			return;
+		}
+
 		SwingUtilities.invokeLater(() -> panel.setOpponentLoading(name));
 
 		executor.execute(() ->
