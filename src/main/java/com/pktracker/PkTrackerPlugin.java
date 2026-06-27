@@ -361,12 +361,11 @@ public class PkTrackerPlugin extends Plugin
 	@Subscribe
 	public void onLootReceived(LootReceived event)
 	{
-		// Only track loot in real PK content (Wilderness or PvP world).
-		if (!inPvpArea())
-		{
-			return;
-		}
-
+		// NOTE: no area check here. Loot keys, bounty crates and loot chests are
+		// real PK rewards but are usually OPENED outside the Wilderness (in a
+		// bank or safe area), so gating on the current area would wrongly drop
+		// them. The container-name filter below is what keeps this PK-only —
+		// these containers don't exist in LMS/Soul Wars.
 		if (event.getType() != LootRecordType.EVENT)
 		{
 			return;
